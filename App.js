@@ -19,6 +19,7 @@ import {
 } from '@expo-google-fonts/dm-sans';
 
 import { T } from './src/tokens';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { PremiumProvider, usePremium } from './src/context/PremiumContext';
 import UpgradeModal from './src/components/UpgradeModal';
 import OnboardingNavigator from './src/screens/onboarding/OnboardingNavigator';
@@ -114,12 +115,27 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const done = await AsyncStorage.getItem('ascend-onboarded');
-      const name = await AsyncStorage.getItem('ascend-name');
+      const [done, name, savedTasks, savedGoals] = await Promise.all([
+        AsyncStorage.getItem('ascend-onboarded'),
+        AsyncStorage.getItem('ascend-name'),
+        AsyncStorage.getItem('ascend-tasks'),
+        AsyncStorage.getItem('ascend-goals'),
+      ]);
       setOnboarded(!!done);
       if (name) setUserName(name);
+      if (savedTasks) { try { setTasks(JSON.parse(savedTasks)); } catch {} }
+      if (savedGoals) { try { setGoals(JSON.parse(savedGoals)); } catch {} }
     })();
   }, []);
+
+  // Persist tasks and goals whenever they change
+  useEffect(() => {
+    AsyncStorage.setItem('ascend-tasks', JSON.stringify(tasks)).catch(() => {});
+  }, [tasks]);
+
+  useEffect(() => {
+    AsyncStorage.setItem('ascend-goals', JSON.stringify(goals)).catch(() => {});
+  }, [goals]);
 
   const completeOnboarding = useCallback((name) => {
     setUserName(name);
@@ -135,6 +151,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <SafeAreaProvider>
       <PremiumProvider>
         <StatusBar style="light" />
@@ -152,5 +169,6 @@ export default function App() {
         )}
       </PremiumProvider>
     </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

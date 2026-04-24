@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, StyleSheet } from 'react-native';
 import { Plus, CheckCircle, Circle, Lock } from 'lucide-react-native';
-import { T, CAT_COLORS } from '../tokens';
+import { T, CAT_COLORS, CATEGORIES } from '../tokens';
+import { generateId } from '../utils/id';
 import Badge from '../components/Badge';
 import ProgressBar from '../components/ProgressBar';
 import Chip from '../components/Chip';
@@ -10,6 +11,9 @@ import Btn from '../components/Btn';
 import { usePremium } from '../context/PremiumContext';
 
 const FREE_GOAL_LIMIT = 3;
+const GOAL_TITLE_MAX  = 100;
+const VALID_TYPES     = ['long', 'short'];
+const RATE_LIMIT_MS   = 500;
 
 function GoalCard({ goal, onPress }) {
   const color = CAT_COLORS[goal.category] || T.blue;
@@ -66,9 +70,14 @@ function AddGoalSheet({ visible, onClose, onAdd }) {
   const [cat,   setCat]   = useState('Fitness');
   const [type,  setType]  = useState('long');
 
+  const handleTitle = text => setTitle(text.slice(0, GOAL_TITLE_MAX));
+
   const submit = () => {
-    if (!title.trim()) return;
-    onAdd({ title, category: cat, type, pct: 0, tasks: 10, tasksDone: 0, dueLabel: 'TBD' });
+    const clean = title.trim();
+    if (!clean) return;
+    const safeCategory = CATEGORIES.includes(cat) ? cat : 'Fitness';
+    const safeType     = VALID_TYPES.includes(type) ? type : 'long';
+    onAdd({ title: clean, category: safeCategory, type: safeType, pct: 0, tasks: 10, tasksDone: 0, dueLabel: 'TBD' });
     setTitle(''); setCat('Fitness'); setType('long');
     onClose();
   };
@@ -77,12 +86,13 @@ function AddGoalSheet({ visible, onClose, onAdd }) {
     <Sheet visible={visible} title="New goal" onClose={onClose}>
       <View style={{ paddingBottom: 8 }}>
         <Text style={s.label}>Goal</Text>
-        <TextInput value={title} onChangeText={setTitle} placeholder="What do you want to achieve?" placeholderTextColor={T.fg4}
-          style={[s.input, title && { borderColor: T.blue }]} autoFocus />
+        <TextInput value={title} onChangeText={handleTitle} placeholder="What do you want to achieve?" placeholderTextColor={T.fg4}
+          style={[s.input, title && { borderColor: T.blue }]} autoFocus maxLength={GOAL_TITLE_MAX} />
+        {title.length > 80 && <Text style={s.charCount}>{title.length}/{GOAL_TITLE_MAX}</Text>}
 
         <Text style={s.label}>Category</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }} contentContainerStyle={{ gap: 7 }}>
-          {['Fitness','Learning','Mindset','Routine','Work','Health'].map(c => (
+          {CATEGORIES.map(c => (
             <Chip key={c} label={c} active={cat === c} onPress={() => setCat(c)} />
           ))}
         </ScrollView>
@@ -104,6 +114,7 @@ export default function GoalsScreen({ goals, setGoals }) {
   const [tab,        setTab]        = useState('all');
   const [addVisible, setAddVisible] = useState(false);
   const [detail,     setDetail]     = useState(null);
+  const lastAdd = React.useRef(0);
 
   const atLimit = !isPremium && goals.length >= FREE_GOAL_LIMIT;
 
@@ -111,7 +122,12 @@ export default function GoalsScreen({ goals, setGoals }) {
                  : tab === 'short' ? goals.filter(g => g.type === 'short')
                  : goals;
 
-  const addGoal = g => setGoals(gs => [...gs, { ...g, id: Date.now() }]);
+  const addGoal = g => {
+    const now = Date.now();
+    if (now - lastAdd.current < RATE_LIMIT_MS) return;
+    lastAdd.current = now;
+    setGoals(gs => [...gs, { ...g, id: generateId() }]);
+  };
 
   const handleAddPress = () => {
     if (atLimit) {
@@ -234,5 +250,6 @@ const s = StyleSheet.create({
   milestoneLabel:  { fontFamily: 'DMSans_400Regular', fontSize: 13 },
 
   label: { fontFamily: 'DMSans_600SemiBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: T.fg3, marginBottom: 8 },
-  input: { backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 10, padding: 12, color: T.fg1, fontSize: 15, fontFamily: 'DMSans_400Regular', marginBottom: 20 },
+  input: { backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 10, padding: 12, color: T.fg1, fontSize: 15, fontFamily: 'DMSans_400Regular', marginBottom: 4 },
+  charCount: { fontFamily: 'DMSans_400Regular', fontSize: 10, color: T.fg4, textAlign: 'right', marginBottom: 12 },
 });

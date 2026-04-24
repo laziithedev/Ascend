@@ -14,6 +14,8 @@ export const T = {
   fg4:   '#3A3A60',
 };
 
+export const CATEGORIES = ['Fitness', 'Learning', 'Mindset', 'Routine', 'Work', 'Health'];
+
 export const CAT_COLORS = {
   Fitness: '#2DDAB5',
   Learning: '#4F6EF7',

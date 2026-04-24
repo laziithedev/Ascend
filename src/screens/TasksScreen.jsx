@@ -2,12 +2,17 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, StyleSheet } from 'react-native';
 import { Plus, Zap } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { T } from '../tokens';
+import { T, CATEGORIES } from '../tokens';
+import { generateId } from '../utils/id';
 import ProgressBar from '../components/ProgressBar';
 import Chip from '../components/Chip';
 import Toggle from '../components/Toggle';
 import Sheet from '../components/Sheet';
 import Btn from '../components/Btn';
+
+const TITLE_MAX = 120;
+const VALID_PRIORITIES = ['low', 'medium', 'high'];
+const VALID_DUE = ['today', 'tomorrow', 'this week'];
 
 function AddTaskSheet({ visible, onClose, onAdd }) {
   const [title,    setTitle]    = useState('');
@@ -16,9 +21,15 @@ function AddTaskSheet({ visible, onClose, onAdd }) {
   const [streak,   setStreak]   = useState(false);
   const [due,      setDue]      = useState('today');
 
+  const handleTitle = text => setTitle(text.slice(0, TITLE_MAX));
+
   const submit = () => {
-    if (!title.trim()) return;
-    onAdd({ title, category: cat, priority, streak, dueLabel: due });
+    const clean = title.trim();
+    if (!clean) return;
+    const safeCategory = CATEGORIES.includes(cat) ? cat : 'Fitness';
+    const safePriority = VALID_PRIORITIES.includes(priority) ? priority : 'medium';
+    const safeDue      = VALID_DUE.includes(due) ? due : 'today';
+    onAdd({ title: clean, category: safeCategory, priority: safePriority, streak: !!streak, dueLabel: safeDue });
     setTitle(''); setCat('Fitness'); setPriority('medium'); setStreak(false); setDue('today');
     onClose();
   };
@@ -27,12 +38,13 @@ function AddTaskSheet({ visible, onClose, onAdd }) {
     <Sheet visible={visible} title="New task" onClose={onClose}>
       <View style={{ paddingBottom: 8 }}>
         <Text style={s.label}>Task name</Text>
-        <TextInput value={title} onChangeText={setTitle} placeholder="What will you do?" placeholderTextColor={T.fg4}
-          style={[s.input, title && { borderColor: T.blue }]} autoFocus />
+        <TextInput value={title} onChangeText={handleTitle} placeholder="What will you do?" placeholderTextColor={T.fg4}
+          style={[s.input, title && { borderColor: T.blue }]} autoFocus maxLength={TITLE_MAX} />
+        {title.length > 100 && <Text style={s.charCount}>{title.length}/{TITLE_MAX}</Text>}
 
         <Text style={s.label}>Category</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }} contentContainerStyle={{ gap: 7 }}>
-          {['Fitness','Learning','Mindset','Routine','Work','Health'].map(c => (
+          {CATEGORIES.map(c => (
             <Chip key={c} label={c} active={cat === c} onPress={() => setCat(c)} />
           ))}
         </ScrollView>
@@ -87,9 +99,12 @@ function TaskItem({ task, onToggle }) {
   );
 }
 
+const RATE_LIMIT_MS = 500;
+
 export default function TasksScreen({ tasks, setTasks }) {
   const [filter,  setFilter]  = useState('all');
   const [sheetOn, setSheetOn] = useState(false);
+  const lastAdd = React.useRef(0);
 
   const done = tasks.filter(t => t.done).length;
   const pct  = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
@@ -100,7 +115,12 @@ export default function TasksScreen({ tasks, setTasks }) {
                  : tasks;
 
   const toggle = id => setTasks(ts => ts.map(t => t.id === id ? { ...t, done: !t.done } : t));
-  const addTask = task => setTasks(ts => [...ts, { ...task, id: Date.now(), done: false, overdue: false }]);
+  const addTask = task => {
+    const now = Date.now();
+    if (now - lastAdd.current < RATE_LIMIT_MS) return;
+    lastAdd.current = now;
+    setTasks(ts => [...ts, { ...task, id: generateId(), done: false, overdue: false }]);
+  };
 
   return (
     <View style={s.root}>
@@ -166,7 +186,8 @@ const s = StyleSheet.create({
   dot:       { width: 6, height: 6, borderRadius: 3 },
 
   label: { fontFamily: 'DMSans_600SemiBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: T.fg3, marginBottom: 8 },
-  input: { backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 10, padding: 12, color: T.fg1, fontSize: 15, fontFamily: 'DMSans_400Regular', marginBottom: 20 },
+  input: { backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 10, padding: 12, color: T.fg1, fontSize: 15, fontFamily: 'DMSans_400Regular', marginBottom: 4 },
+  charCount: { fontFamily: 'DMSans_400Regular', fontSize: 10, color: T.fg4, textAlign: 'right', marginBottom: 12 },
   streakRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.06)', marginBottom: 24 },
   streakTitle: { fontFamily: 'DMSans_500Medium', fontSize: 14, color: T.fg1 },
   streakSub:   { fontFamily: 'DMSans_400Regular', fontSize: 11, color: T.fg3 },

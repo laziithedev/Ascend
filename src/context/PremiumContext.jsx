@@ -17,14 +17,17 @@ export function PremiumProvider({ children }) {
 
   const hideUpgrade = useCallback(() => setUpgradeVisible(false), []);
 
-  // Debug unlock — remove before shipping to store
   const debugUnlock = useCallback(async () => {
+    if (!__DEV__) return;
     setIsPremium(true);
     await AsyncStorage.setItem('ascend-premium', '1');
   }, []);
 
   return (
-    <PremiumContext.Provider value={{ isPremium, showUpgrade, hideUpgrade, upgradeVisible, upgradeSource, debugUnlock }}>
+    <PremiumContext.Provider value={{
+      isPremium, showUpgrade, hideUpgrade, upgradeVisible, upgradeSource,
+      ...__DEV__ && { debugUnlock },
+    }}>
       {children}
     </PremiumContext.Provider>
   );

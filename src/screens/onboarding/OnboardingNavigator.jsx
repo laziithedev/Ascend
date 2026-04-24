@@ -3,13 +3,15 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Dimensions } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TrendingUp } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { T } from '../../tokens';
+import { T, CATEGORIES } from '../../tokens';
 import Btn from '../../components/Btn';
 import Badge from '../../components/Badge';
 
 const { width } = Dimensions.get('window');
-const ALL_CATS = ['Fitness', 'Learning', 'Mindset', 'Routine', 'Work', 'Health'];
-const RANKS = [['Iron', '#A0A0C0'], ['Bronze', '#C0845A'], ['Silver', '#C0C8DC'], ['Gold', T.gold], ['Obsidian', T.blue]];
+const RANKS = [['Iron', '#A0A0C0'], ['Bronze', '#C0845A'], ['Silver', '#C0C8DC'], ['Gold', T.gold], ['Diamond', '#B088F8']];
+
+const NAME_MAX = 50;
+const sanitizeName = str => str.replace(/[<>&"']/g, '').trimStart();
 
 // ── Step 0: Splash ────────────────────────────────────────────
 function SplashStep({ onNext }) {
@@ -29,6 +31,8 @@ function SplashStep({ onNext }) {
 
 // ── Step 1: Name ─────────────────────────────────────────────
 function NameStep({ name, setName, onNext }) {
+  const handleChange = text => setName(sanitizeName(text).slice(0, NAME_MAX));
+  const isValid = name.trim().length >= 1 && name.trim().length <= NAME_MAX;
   return (
     <View style={styles.stepPad}>
       <Badge color={T.blue}>Step 1 of 3</Badge>
@@ -37,13 +41,17 @@ function NameStep({ name, setName, onNext }) {
       <Text style={styles.fieldLabel}>Your name</Text>
       <TextInput
         value={name}
-        onChangeText={setName}
+        onChangeText={handleChange}
         placeholder="e.g. Jordan"
         placeholderTextColor={T.fg4}
         autoFocus
+        maxLength={NAME_MAX}
+        autoComplete="off"
+        autoCorrect={false}
         style={[styles.input, name && { borderColor: T.blue, shadowColor: T.blue, shadowOpacity: 0.15, shadowRadius: 8, elevation: 3 }]}
       />
-      <Btn variant="primary" size="lg" full onPress={onNext} disabled={!name.trim()}>Continue</Btn>
+      {name.length > 0 && <Text style={styles.charCount}>{name.length}/{NAME_MAX}</Text>}
+      <Btn variant="primary" size="lg" full onPress={onNext} disabled={!isValid}>Continue</Btn>
     </View>
   );
 }
@@ -56,7 +64,7 @@ function CatsStep({ cats, setCats, onNext }) {
       <Text style={styles.stepTitle}>What do you want{'\n'}to improve?</Text>
       <Text style={styles.stepSub}>Select all that apply.</Text>
       <View style={styles.catGrid}>
-        {ALL_CATS.map(c => {
+        {CATEGORIES.map(c => {
           const active = cats.includes(c);
           return (
             <Pressable key={c}
@@ -110,9 +118,10 @@ export default function OnboardingNavigator({ onComplete }) {
   const next = () => setStep(s => s + 1);
 
   const finish = async () => {
-    await AsyncStorage.setItem('ascend-name', name || 'You');
+    const safeName = name.trim() || 'You';
+    await AsyncStorage.setItem('ascend-name', safeName);
     await AsyncStorage.setItem('ascend-onboarded', '1');
-    onComplete(name || 'You');
+    onComplete(safeName);
   };
 
   const steps = [
@@ -160,6 +169,8 @@ const styles = StyleSheet.create({
     borderRadius: 10, padding: 14, color: T.fg1, fontSize: 16,
     fontFamily: 'DMSans_400Regular', marginBottom: 32,
   },
+
+  charCount: { fontFamily: 'DMSans_400Regular', fontSize: 10, color: T.fg4, textAlign: 'right', marginTop: -24, marginBottom: 24 },
 
   catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, flex: 1, paddingBottom: 32 },
   catBtn:  { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
