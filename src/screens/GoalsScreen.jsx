@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, StyleSheet } from 'react-native';
-import { Plus, CheckCircle, Circle } from 'lucide-react-native';
+import { Plus, CheckCircle, Circle, Lock } from 'lucide-react-native';
 import { T, CAT_COLORS } from '../tokens';
 import Badge from '../components/Badge';
 import ProgressBar from '../components/ProgressBar';
 import Chip from '../components/Chip';
 import Sheet from '../components/Sheet';
 import Btn from '../components/Btn';
+import { usePremium } from '../context/PremiumContext';
+
+const FREE_GOAL_LIMIT = 3;
 
 function GoalCard({ goal, onPress }) {
   const color = CAT_COLORS[goal.category] || T.blue;
@@ -97,9 +100,12 @@ function AddGoalSheet({ visible, onClose, onAdd }) {
 }
 
 export default function GoalsScreen({ goals, setGoals }) {
+  const { isPremium, showUpgrade } = usePremium();
   const [tab,        setTab]        = useState('all');
   const [addVisible, setAddVisible] = useState(false);
   const [detail,     setDetail]     = useState(null);
+
+  const atLimit = !isPremium && goals.length >= FREE_GOAL_LIMIT;
 
   const filtered = tab === 'long'  ? goals.filter(g => g.type === 'long')
                  : tab === 'short' ? goals.filter(g => g.type === 'short')
@@ -107,23 +113,31 @@ export default function GoalsScreen({ goals, setGoals }) {
 
   const addGoal = g => setGoals(gs => [...gs, { ...g, id: Date.now() }]);
 
+  const handleAddPress = () => {
+    if (atLimit) {
+      showUpgrade('goals');
+    } else {
+      setAddVisible(true);
+    }
+  };
+
   return (
     <View style={s.root}>
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
         <View style={s.header}>
           <View>
             <Text style={s.screenTitle}>Goals</Text>
-            <Text style={s.screenSub}>{goals.length} active goals</Text>
+            <Text style={s.screenSub}>{goals.length} active goal{goals.length !== 1 ? 's' : ''}</Text>
           </View>
-          <Pressable style={s.addBtn} onPress={() => setAddVisible(true)}>
-            <Plus size={20} color="#fff" />
+          <Pressable style={[s.addBtn, atLimit && s.addBtnLocked]} onPress={handleAddPress}>
+            {atLimit ? <Lock size={18} color={T.gold} /> : <Plus size={20} color="#fff" />}
           </Pressable>
         </View>
 
         <View style={s.summaryRow}>
           {[
-            { v: goals.length,                             l: 'Total',     c: T.blue },
-            { v: goals.filter(g => g.pct >= 100).length,  l: 'Complete',  c: T.teal },
+            { v: goals.length,                                l: 'Total',     c: T.blue },
+            { v: goals.filter(g => g.pct >= 100).length,     l: 'Complete',  c: T.teal },
             { v: goals.filter(g => g.type === 'long').length, l: 'Long-term', c: T.gold },
           ].map(({ v, l, c }) => (
             <View key={l} style={s.summaryCard}>
@@ -132,6 +146,21 @@ export default function GoalsScreen({ goals, setGoals }) {
             </View>
           ))}
         </View>
+
+        {/* Free tier limit indicator */}
+        {!isPremium && (
+          <View style={s.limitBar}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.limitText}>{goals.length} / {FREE_GOAL_LIMIT} goals used</Text>
+            </View>
+            {atLimit && (
+              <Pressable onPress={() => showUpgrade('goals')} style={s.limitUpgrade}>
+                <Lock size={10} color={T.gold} />
+                <Text style={s.limitUpgradeText}>Unlock unlimited</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
 
         <View style={{ flexDirection: 'row', gap: 7, marginBottom: 18 }}>
           {[['all','All'],['long','Long-term'],['short','Short-term']].map(([v,l]) => (
@@ -143,6 +172,19 @@ export default function GoalsScreen({ goals, setGoals }) {
           ? <Text style={s.empty}>No goals here.</Text>
           : filtered.map(g => <GoalCard key={g.id} goal={g} onPress={() => setDetail(g)} />)
         }
+
+        {/* Upsell after goals list when at limit */}
+        {atLimit && (
+          <Pressable onPress={() => showUpgrade('goals')} style={s.upsellCard}>
+            <View style={s.upsellIcon}>
+              <Lock size={18} color={T.gold} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.upsellTitle}>Unlock unlimited goals</Text>
+              <Text style={s.upsellBody}>You've hit the 3-goal limit. Upgrade for unlimited goals + templates. <Text style={{ color: T.gold }}>Upgrade →</Text></Text>
+            </View>
+          </Pressable>
+        )}
       </ScrollView>
 
       <AddGoalSheet   visible={addVisible}  onClose={() => setAddVisible(false)} onAdd={addGoal} />
@@ -158,14 +200,25 @@ const s = StyleSheet.create({
   header:      { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
   screenTitle: { fontFamily: 'Syne_800ExtraBold', fontSize: 26, color: T.fg1 },
   screenSub:   { fontFamily: 'DMSans_400Regular', fontSize: 12, color: T.fg3, marginTop: 3 },
-  addBtn:      { backgroundColor: T.blue, borderRadius: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  addBtn:       { backgroundColor: T.blue, borderRadius: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  addBtnLocked: { backgroundColor: T.gold + '1A', borderWidth: 1, borderColor: T.gold + '44' },
 
-  summaryRow:   { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  summaryRow:   { flexDirection: 'row', gap: 10, marginBottom: 16 },
   summaryCard:  { flex: 1, backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 12, alignItems: 'center' },
   summaryNum:   { fontFamily: 'Syne_800ExtraBold', fontSize: 24, lineHeight: 28, marginBottom: 3 },
   summaryLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.9, color: T.fg4 },
 
+  limitBar:         { flexDirection: 'row', alignItems: 'center', backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16 },
+  limitText:        { fontFamily: 'DMSans_400Regular', fontSize: 12, color: T.fg3 },
+  limitUpgrade:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: T.gold + '18', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 },
+  limitUpgradeText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11, color: T.gold },
+
   empty: { textAlign: 'center', paddingVertical: 40, color: T.fg4, fontSize: 13, fontFamily: 'DMSans_400Regular' },
+
+  upsellCard:  { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: T.s2, borderWidth: 1, borderColor: T.gold + '33', borderRadius: 14, padding: 16, marginTop: 4 },
+  upsellIcon:  { width: 40, height: 40, borderRadius: 11, backgroundColor: T.gold + '1A', alignItems: 'center', justifyContent: 'center' },
+  upsellTitle: { fontFamily: 'DMSans_600SemiBold', fontSize: 14, color: T.fg1, marginBottom: 3 },
+  upsellBody:  { fontFamily: 'DMSans_400Regular', fontSize: 12, color: T.fg3, lineHeight: 18 },
 
   card:          { backgroundColor: T.s1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 16, marginBottom: 12 },
   cardTop:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },

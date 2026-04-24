@@ -19,6 +19,8 @@ import {
 } from '@expo-google-fonts/dm-sans';
 
 import { T } from './src/tokens';
+import { PremiumProvider, usePremium } from './src/context/PremiumContext';
+import UpgradeModal from './src/components/UpgradeModal';
 import OnboardingNavigator from './src/screens/onboarding/OnboardingNavigator';
 import HomeScreen  from './src/screens/HomeScreen';
 import TasksScreen from './src/screens/TasksScreen';
@@ -35,6 +37,11 @@ const TAB_ICONS = {
   Stats: BarChart2,
   Rank:  Award,
 };
+
+function GlobalUpgradeModal() {
+  const { upgradeVisible, upgradeSource, hideUpgrade } = usePremium();
+  return <UpgradeModal visible={upgradeVisible} onClose={hideUpgrade} source={upgradeSource} />;
+}
 
 function MainTabs({ userName, tasks, setTasks, goals, setGoals }) {
   const insets = useSafeAreaInsets();
@@ -129,18 +136,21 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
-      {!onboarded ? (
-        <OnboardingNavigator onComplete={completeOnboarding} />
-      ) : (
-        <NavigationContainer theme={{ colors: { background: T.bg }, dark: true }}>
-          <MainTabs
-            userName={userName}
-            tasks={tasks}   setTasks={setTasks}
-            goals={goals}   setGoals={setGoals}
-          />
-        </NavigationContainer>
-      )}
+      <PremiumProvider>
+        <StatusBar style="light" />
+        {!onboarded ? (
+          <OnboardingNavigator onComplete={completeOnboarding} />
+        ) : (
+          <NavigationContainer theme={{ colors: { background: T.bg }, dark: true }}>
+            <MainTabs
+              userName={userName}
+              tasks={tasks}   setTasks={setTasks}
+              goals={goals}   setGoals={setGoals}
+            />
+            <GlobalUpgradeModal />
+          </NavigationContainer>
+        )}
+      </PremiumProvider>
     </SafeAreaProvider>
   );
 }
