@@ -6,11 +6,14 @@ import RingProgress from '../components/RingProgress';
 import ProgressBar from '../components/ProgressBar';
 import Btn from '../components/Btn';
 
-export default function HomeScreen({ userName, tasks, goals, navigation, onAddTask }) {
+export default function HomeScreen({ userName, tasks, goals, navigation, onAddTask, streak = 0, rank }) {
   const done = tasks.filter(t => t.done).length;
   const pct  = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
-  const todayTasks = tasks.slice(0, 3);
+  const todayTasks  = tasks.slice(0, 3);
   const activeGoals = goals.slice(0, 2);
+  const rankName  = rank?.name  ?? 'Iron';
+  const rankColor = rank?.color ?? '#A0A0C0';
+  const rankTier  = rank?.id === 'iron' ? 1 : rank?.id === 'bronze' ? 2 : rank?.id === 'silver' ? 3 : rank?.id === 'gold' ? 4 : rank?.id === 'platinum' ? 5 : 6;
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -46,18 +49,18 @@ export default function HomeScreen({ userName, tasks, goals, navigation, onAddTa
             <Zap size={14} color={T.teal} />
             <Text style={styles.miniLabel}>Streak</Text>
           </View>
-          <Text style={[styles.miniValue, { color: T.teal }]}>0</Text>
+          <Text style={[styles.miniValue, { color: T.teal }]}>{streak}</Text>
           <Text style={styles.miniSub}>days in a row</Text>
         </View>
 
-        <Pressable style={[styles.miniCard, { borderColor: 'rgba(160,160,192,0.2)' }]} onPress={() => navigation.navigate('Rank')}>
-          <View style={styles.miniGlowIron} />
+        <Pressable style={[styles.miniCard, { borderColor: rankColor + '33' }]} onPress={() => navigation.navigate('Rank')}>
+          <View style={[styles.miniGlowIron, { backgroundColor: rankColor + '18' }]} />
           <View style={styles.miniHeader}>
-            <Award size={14} color="#A0A0C0" />
+            <Award size={14} color={rankColor} />
             <Text style={styles.miniLabel}>Rank</Text>
           </View>
-          <Text style={[styles.miniValue, { color: '#A0A0C0', fontSize: 20 }]}>Iron</Text>
-          <Text style={styles.miniSub}>Tier 1 of 5</Text>
+          <Text style={[styles.miniValue, { color: rankColor, fontSize: 20 }]}>{rankName}</Text>
+          <Text style={styles.miniSub}>Tier {rankTier} of 6</Text>
         </Pressable>
       </View>
 

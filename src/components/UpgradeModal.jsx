@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Modal, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { X, Zap, BarChart2, Award, Target, Bell, TrendingUp } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { T } from '../tokens';
 import Btn from './Btn';
+import { getOfferings, purchasePackage } from '../services/purchases';
+import { usePremium } from '../context/PremiumContext';
 
 const PERKS = [
   { Icon: BarChart2,  text: 'Full analytics — graphs, trends & breakdowns' },
@@ -16,11 +18,48 @@ const PERKS = [
 
 export default function UpgradeModal({ visible, onClose, source = '' }) {
   const insets = useSafeAreaInsets();
-  const [billing, setBilling] = useState('annual'); // 'monthly' | 'annual'
+  const { onPurchaseSuccess, restore } = usePremium();
+  const [billing,    setBilling]    = useState('annual');
+  const [purchasing, setPurchasing] = useState(false);
+  const [restoring,  setRestoring]  = useState(false);
 
   const ctaLabel = billing === 'annual'
     ? 'Start free trial — $34.99/yr'
     : 'Start free trial — $4.99/mo';
+
+  const handlePurchase = async () => {
+    setPurchasing(true);
+    try {
+      const offerings = await getOfferings();
+      if (offerings) {
+        const pkg = billing === 'annual' ? offerings.annual : offerings.monthly;
+        if (pkg) {
+          const success = await purchasePackage(pkg);
+          if (success) { await onPurchaseSuccess(); return; }
+        }
+      }
+      // RevenueCat not configured — close gracefully (dev/staging)
+      onClose();
+    } catch (e) {
+      if (!e?.userCancelled) {
+        Alert.alert('Purchase failed', e?.message ?? 'Please try again.');
+      }
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    setRestoring(true);
+    try {
+      const ok = await restore();
+      if (!ok) Alert.alert('Nothing to restore', 'No previous purchase found for this account.');
+    } catch {
+      Alert.alert('Restore failed', 'Please try again.');
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -28,13 +67,11 @@ export default function UpgradeModal({ visible, onClose, source = '' }) {
         <View style={[s.sheet, { paddingBottom: insets.bottom + 24 }]}>
           <View style={s.handle} />
 
-          {/* Close */}
           <Pressable style={s.closeBtn} onPress={onClose} hitSlop={12}>
             <X size={18} color={T.fg3} />
           </Pressable>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
-            {/* Header */}
             <View style={s.header}>
               <View style={s.glowBlue} />
               <View style={s.iconWrap}>
@@ -52,19 +89,15 @@ export default function UpgradeModal({ visible, onClose, source = '' }) {
               </Text>
             </View>
 
-            {/* Perks */}
             <View style={s.perks}>
               {PERKS.map(({ Icon, text }) => (
                 <View key={text} style={s.perk}>
-                  <View style={s.perkIcon}>
-                    <Icon size={15} color={T.gold} />
-                  </View>
+                  <View style={s.perkIcon}><Icon size={15} color={T.gold} /></View>
                   <Text style={s.perkText}>{text}</Text>
                 </View>
               ))}
             </View>
 
-            {/* Billing toggle */}
             <View style={s.billingRow}>
               <Pressable onPress={() => setBilling('monthly')}
                 style={[s.billingBtn, billing === 'monthly' && s.billingActive]}>
@@ -81,11 +114,21 @@ export default function UpgradeModal({ visible, onClose, source = '' }) {
               </Pressable>
             </View>
 
-            <Btn variant="gold" size="lg" full onPress={onClose} style={{ marginTop: 4 }}>
-              {ctaLabel}
+            <Btn variant="gold" size="lg" full onPress={handlePurchase}
+              style={{ marginTop: 4 }} disabled={purchasing || restoring}>
+              {purchasing
+                ? <ActivityIndicator size="small" color={T.bg} />
+                : ctaLabel}
             </Btn>
 
             <Text style={s.fine}>7-day free trial · cancel anytime · no hidden fees</Text>
+
+            {/* Required by App Store review guidelines */}
+            <Pressable onPress={handleRestore} disabled={restoring || purchasing} style={s.restoreBtn}>
+              {restoring
+                ? <ActivityIndicator size="small" color={T.fg3} />
+                : <Text style={s.restoreText}>Restore purchases</Text>}
+            </Pressable>
           </ScrollView>
         </View>
       </View>
@@ -95,8 +138,8 @@ export default function UpgradeModal({ visible, onClose, source = '' }) {
 
 const s = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: T.s2, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderBottomWidth: 0 },
-  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: T.s4, alignSelf: 'center', marginTop: 12, marginBottom: 4 },
+  sheet:    { backgroundColor: T.s2, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderBottomWidth: 0 },
+  handle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: T.s4, alignSelf: 'center', marginTop: 12, marginBottom: 4 },
   closeBtn: { position: 'absolute', top: 20, right: 20, zIndex: 10 },
 
   header:   { alignItems: 'center', paddingTop: 20, paddingBottom: 24, overflow: 'hidden' },
@@ -110,14 +153,16 @@ const s = StyleSheet.create({
   perkIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: T.gold + '18', alignItems: 'center', justifyContent: 'center' },
   perkText: { fontFamily: 'DMSans_400Regular', fontSize: 13, color: T.fg1, flex: 1 },
 
-  billingRow:   { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  billingBtn:   { flex: 1, backgroundColor: T.s1, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', padding: 14, alignItems: 'center', gap: 3 },
+  billingRow:    { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  billingBtn:    { flex: 1, backgroundColor: T.s1, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', padding: 14, alignItems: 'center', gap: 3 },
   billingActive: { borderColor: T.blue, backgroundColor: T.blue + '10' },
-  billingLabel: { fontFamily: 'DMSans_500Medium', fontSize: 12, color: T.fg3 },
-  billingPrice: { fontFamily: 'Syne_800ExtraBold', fontSize: 22, color: T.fg3 },
-  billingPer:   { fontFamily: 'DMSans_400Regular', fontSize: 11, color: T.fg4 },
-  saveBadge:    { backgroundColor: T.teal + '22', borderRadius: 100, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 2 },
-  saveText:     { fontFamily: 'DMSans_700Bold', fontSize: 8, color: T.teal, letterSpacing: 0.8 },
+  billingLabel:  { fontFamily: 'DMSans_500Medium', fontSize: 12, color: T.fg3 },
+  billingPrice:  { fontFamily: 'Syne_800ExtraBold', fontSize: 22, color: T.fg3 },
+  billingPer:    { fontFamily: 'DMSans_400Regular', fontSize: 11, color: T.fg4 },
+  saveBadge:     { backgroundColor: T.teal + '22', borderRadius: 100, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 2 },
+  saveText:      { fontFamily: 'DMSans_700Bold', fontSize: 8, color: T.teal, letterSpacing: 0.8 },
 
-  fine: { fontFamily: 'DMSans_400Regular', fontSize: 11, color: T.fg4, textAlign: 'center', marginTop: 12 },
+  fine:        { fontFamily: 'DMSans_400Regular', fontSize: 11, color: T.fg4, textAlign: 'center', marginTop: 12 },
+  restoreBtn:  { alignItems: 'center', paddingVertical: 14 },
+  restoreText: { fontFamily: 'DMSans_400Regular', fontSize: 12, color: T.fg3 },
 });

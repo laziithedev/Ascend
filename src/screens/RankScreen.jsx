@@ -8,6 +8,7 @@ import ProgressBar from '../components/ProgressBar';
 import Btn from '../components/Btn';
 import LucideIconByName from '../components/LucideIconByName';
 import { usePremium } from '../context/PremiumContext';
+import { computeRank, nextRank } from '../utils/rank';
 
 const RANKS = [
   { id: 'iron',     name: 'Iron',     tier: 1, color: '#A0A0C0', desc: 'Beginning the climb.',           req: 'Complete 10 tasks',  premium: false, current: true },
@@ -29,14 +30,16 @@ const BADGES = [
   { id: 'diamond',   label: 'Diamond rank',    icon: 'Layers',      color: '#B088F8', earned: false },
 ];
 
-const MILESTONES = [
-  ['7-day streak',   T.teal,    false],
-  ['30-day streak',  T.teal,    false],
-  ['100 tasks done', T.blue,    false],
-  ['Perfect week',   T.blue,    false],
-  ['Gold rank',      T.gold,    false],
-  ['Diamond rank',   '#B088F8', false],
-];
+function getMilestones(streak, totalCompleted, isPremium) {
+  return [
+    ['7-day streak',   T.teal,    streak >= 7],
+    ['30-day streak',  T.teal,    streak >= 30],
+    ['100 tasks done', T.blue,    totalCompleted >= 100],
+    ['Perfect week',   T.blue,    streak >= 7],
+    ['Gold rank',      T.gold,    isPremium && totalCompleted >= 100],
+    ['Diamond rank',   '#B088F8', isPremium && streak >= 365],
+  ];
+}
 
 function RankUpOverlay({ visible, onClose }) {
   return (
@@ -77,14 +80,16 @@ function LockedRankCard({ rank, onPress }) {
   );
 }
 
-export default function RankScreen() {
+export default function RankScreen({ streak = 0, totalCompleted = 0 }) {
   const { isPremium, showUpgrade } = usePremium();
-  const [selected, setSelected] = useState('iron');
+  const earned      = computeRank(streak, totalCompleted, isPremium);
+  const [selected, setSelected] = useState(earned.id);
 
   const visibleRanks = isPremium ? RANKS : RANKS.filter(r => !r.premium);
   const lockedRanks  = isPremium ? [] : RANKS.filter(r => r.premium);
-  const sel = RANKS.find(r => r.id === selected) || RANKS[0];
+  const sel          = RANKS.find(r => r.id === selected) || RANKS[0];
   const totalTiers   = isPremium ? 6 : 3;
+  const upcoming     = nextRank(earned.id, isPremium);
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
@@ -105,31 +110,53 @@ export default function RankScreen() {
         <Text style={[s.spotName, { color: sel.color }]}>{sel.name} Tier</Text>
         <Text style={s.spotTier}>Tier {sel.tier} of {totalTiers}</Text>
         <Text style={s.spotDesc}>{sel.desc}</Text>
-        {sel.current && <Badge color={sel.color} style={{ marginTop: 8 }}>Current rank</Badge>}
+        {sel.id === earned.id && <Badge color={sel.color} style={{ marginTop: 8 }}>Current rank</Badge>}
       </View>
 
       {/* Free tier selector */}
       <View style={s.tierRow}>
-        {visibleRanks.map(r => (
-          <Pressable key={r.id} onPress={() => setSelected(r.id)}
-            style={[s.tierBtn, { borderColor: selected === r.id ? r.color + '66' : 'rgba(255,255,255,0.05)', backgroundColor: selected === r.id ? r.color + '14' : T.s1 }]}>
-            <View style={[s.tierCircle, { borderColor: r.color + (selected === r.id ? 'AA' : '44'), backgroundColor: r.color + '10' }]}>
-              <Text style={[s.tierLetter, { color: r.color }]}>{r.name[0]}</Text>
-            </View>
-            <Text style={[s.tierName, { color: selected === r.id ? r.color : T.fg4 }]}>{r.name}</Text>
-          </Pressable>
-        ))}
+        {visibleRanks.map(r => {
+          const isEarned = RANKS.findIndex(x => x.id === r.id) <= RANKS.findIndex(x => x.id === earned.id);
+          return (
+            <Pressable key={r.id} onPress={() => setSelected(r.id)}
+              style={[s.tierBtn, { borderColor: selected === r.id ? r.color + '66' : 'rgba(255,255,255,0.05)', backgroundColor: selected === r.id ? r.color + '14' : T.s1, opacity: isEarned ? 1 : 0.5 }]}>
+              <View style={[s.tierCircle, { borderColor: r.color + (selected === r.id ? 'AA' : '44'), backgroundColor: r.color + '10' }]}>
+                <Text style={[s.tierLetter, { color: r.color }]}>{r.name[0]}</Text>
+              </View>
+              <Text style={[s.tierName, { color: selected === r.id ? r.color : T.fg4 }]}>{r.name}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      {/* Progress card */}
-      <View style={s.progressCard}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <Text style={s.cardLabel}>Progress to Bronze</Text>
-          <Text style={[s.progressPct, { color: '#C0845A' }]}>0%</Text>
+      {/* Progress card — server-verified */}
+      {upcoming ? (() => {
+        // Streak-based progress toward next rank
+        const streakNeeded = upcoming.minStreak > 0 ? upcoming.minStreak : 0;
+        const taskNeeded   = upcoming.minTasks  > 0 ? upcoming.minTasks  : 0;
+        const pct = streakNeeded > 0
+          ? Math.min(Math.round((streak / streakNeeded) * 100), 100)
+          : taskNeeded > 0
+          ? Math.min(Math.round((totalCompleted / taskNeeded) * 100), 100)
+          : 0;
+        const label = streakNeeded > 0
+          ? `${streak} / ${streakNeeded} day streak`
+          : `${totalCompleted} / ${taskNeeded} tasks`;
+        return (
+          <View style={[s.progressCard, { borderColor: upcoming.color + '33' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={s.cardLabel}>Progress to {upcoming.name}</Text>
+              <Text style={[s.progressPct, { color: upcoming.color }]}>{pct}%</Text>
+            </View>
+            <ProgressBar value={pct} color={upcoming.color} height={8} />
+            <Text style={[s.cardLabel, { marginTop: 8, color: T.fg3 }]}>{label}</Text>
+          </View>
+        );
+      })() : (
+        <View style={s.progressCard}>
+          <Text style={[s.cardLabel, { color: T.teal }]}>You've reached the top rank. Elite.</Text>
         </View>
-        <ProgressBar value={0} color="#C0845A" height={8} />
-        <Text style={[s.cardLabel, { marginTop: 8, color: T.fg3 }]}>Complete tasks daily to climb ranks</Text>
-      </View>
+      )}
 
       {/* Locked premium tiers */}
       {lockedRanks.length > 0 && (
@@ -155,13 +182,13 @@ export default function RankScreen() {
         </>
       )}
 
-      {/* Milestones */}
+      {/* Milestones — driven by server data */}
       <Text style={[s.sectionLabel, { marginTop: 8 }]}>Milestones</Text>
-      {MILESTONES.map(([label, color, earned]) => (
-        <View key={label} style={[s.milestoneRow, { opacity: earned ? 1 : 0.4, borderColor: earned ? color + '22' : 'rgba(255,255,255,0.04)' }]}>
-          {earned ? <CheckCircle size={15} color={color} /> : <Circle size={15} color={T.fg4} />}
-          <Text style={[s.milestoneText, { color: earned ? T.fg1 : T.fg3 }]}>{label}</Text>
-          {earned && <Badge color={color} style={{ marginLeft: 'auto' }}>Earned</Badge>}
+      {getMilestones(streak, totalCompleted, isPremium).map(([label, color, isEarned]) => (
+        <View key={label} style={[s.milestoneRow, { opacity: isEarned ? 1 : 0.4, borderColor: isEarned ? color + '22' : 'rgba(255,255,255,0.04)' }]}>
+          {isEarned ? <CheckCircle size={15} color={color} /> : <Circle size={15} color={T.fg4} />}
+          <Text style={[s.milestoneText, { color: isEarned ? T.fg1 : T.fg3 }]}>{label}</Text>
+          {isEarned && <Badge color={color} style={{ marginLeft: 'auto' }}>Earned</Badge>}
         </View>
       ))}
 

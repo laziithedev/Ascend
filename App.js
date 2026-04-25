@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, ActivityIndicator, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +28,8 @@ import TasksScreen from './src/screens/TasksScreen';
 import GoalsScreen from './src/screens/GoalsScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import RankScreen  from './src/screens/RankScreen';
+import { loadTasks, saveTasks, loadGoals, saveGoals, getStreak, getTotalCompleted, recordDayComplete, incrementTotalCompleted } from './src/services/db';
+import { computeRank } from './src/utils/rank';
 
 const Tab = createBottomTabNavigator();
 
@@ -44,8 +46,10 @@ function GlobalUpgradeModal() {
   return <UpgradeModal visible={upgradeVisible} onClose={hideUpgrade} source={upgradeSource} />;
 }
 
-function MainTabs({ userName, tasks, setTasks, goals, setGoals }) {
-  const insets = useSafeAreaInsets();
+function MainTabs({ userName, tasks, setTasks, goals, setGoals, streak, totalCompleted }) {
+  const insets     = useSafeAreaInsets();
+  const { isPremium } = usePremium();
+  const currentRank  = computeRank(streak, totalCompleted, isPremium);
 
   return (
     <Tab.Navigator
@@ -77,6 +81,8 @@ function MainTabs({ userName, tasks, setTasks, goals, setGoals }) {
             userName={userName}
             tasks={tasks}
             goals={goals}
+            streak={streak}
+            rank={currentRank}
             navigation={navigation}
             onAddTask={() => navigation.navigate('Tasks')}
           />
@@ -89,10 +95,10 @@ function MainTabs({ userName, tasks, setTasks, goals, setGoals }) {
         {() => <GoalsScreen goals={goals} setGoals={setGoals} />}
       </Tab.Screen>
       <Tab.Screen name="Stats">
-        {() => <StatsScreen tasks={tasks} />}
+        {() => <StatsScreen tasks={tasks} streak={streak} totalCompleted={totalCompleted} />}
       </Tab.Screen>
       <Tab.Screen name="Rank">
-        {() => <RankScreen />}
+        {() => <RankScreen streak={streak} totalCompleted={totalCompleted} />}
       </Tab.Screen>
     </Tab.Navigator>
   );
@@ -108,34 +114,85 @@ export default function App() {
     DMSans_700Bold,
   });
 
-  const [onboarded, setOnboarded] = useState(null);
-  const [userName,  setUserName]  = useState('');
-  const [tasks,     setTasks]     = useState([]);
-  const [goals,     setGoals]     = useState([]);
+  const [onboarded,       setOnboarded]       = useState(null);
+  const [userName,        setUserName]         = useState('');
+  const [tasks,           setTasksRaw]         = useState([]);
+  const [goals,           setGoalsRaw]         = useState([]);
+  const [streak,          setStreak]           = useState(0);
+  const [totalCompleted,  setTotalCompleted]   = useState(0);
 
+  const prevDoneCount = useRef(0);
+
+  // Persist tasks remotely whenever they change; track completions
+  const setTasks = useCallback((updater) => {
+    setTasksRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveTasks(next).catch(() => {});
+
+      // Detect newly completed tasks to update server-side total
+      const prevDone = prev.filter(t => t.done).length;
+      const nextDone = next.filter(t => t.done).length;
+      const delta    = nextDone - prevDone;
+      if (delta > 0) {
+        incrementTotalCompleted(delta)
+          .then(() => getTotalCompleted().then(setTotalCompleted))
+          .catch(() => {});
+      }
+
+      // If all tasks done for today, record a day completion server-side
+      if (next.length > 0 && next.every(t => t.done)) {
+        recordDayComplete()
+          .then(() => getStreak().then(setStreak))
+          .catch(() => {});
+      }
+
+      return next;
+    });
+  }, []);
+
+  const setGoals = useCallback((updater) => {
+    setGoalsRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveGoals(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // Initial load
   useEffect(() => {
     (async () => {
-      const [done, name, savedTasks, savedGoals] = await Promise.all([
+      const [done, name] = await Promise.all([
         AsyncStorage.getItem('ascend-onboarded'),
         AsyncStorage.getItem('ascend-name'),
-        AsyncStorage.getItem('ascend-tasks'),
-        AsyncStorage.getItem('ascend-goals'),
       ]);
       setOnboarded(!!done);
       if (name) setUserName(name);
-      if (savedTasks) { try { setTasks(JSON.parse(savedTasks)); } catch {} }
-      if (savedGoals) { try { setGoals(JSON.parse(savedGoals)); } catch {} }
+
+      // Load data (Firestore → AsyncStorage fallback)
+      const [loadedTasks, loadedGoals, currentStreak, totalDone] = await Promise.all([
+        loadTasks(),
+        loadGoals(),
+        getStreak(),
+        getTotalCompleted(),
+      ]);
+      setTasksRaw(loadedTasks);
+      setGoalsRaw(loadedGoals);
+      setStreak(currentStreak);
+      setTotalCompleted(totalDone);
     })();
   }, []);
 
-  // Persist tasks and goals whenever they change
+  // Re-verify premium + refresh streak whenever app comes to foreground
   useEffect(() => {
-    AsyncStorage.setItem('ascend-tasks', JSON.stringify(tasks)).catch(() => {});
-  }, [tasks]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('ascend-goals', JSON.stringify(goals)).catch(() => {});
-  }, [goals]);
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state === 'active') {
+        const [s, t] = await Promise.all([getStreak(), getTotalCompleted()]);
+        setStreak(s);
+        setTotalCompleted(t);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const completeOnboarding = useCallback((name) => {
     setUserName(name);
@@ -152,23 +209,25 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-    <SafeAreaProvider>
-      <PremiumProvider>
-        <StatusBar style="light" />
-        {!onboarded ? (
-          <OnboardingNavigator onComplete={completeOnboarding} />
-        ) : (
-          <NavigationContainer theme={{ colors: { background: T.bg }, dark: true }}>
-            <MainTabs
-              userName={userName}
-              tasks={tasks}   setTasks={setTasks}
-              goals={goals}   setGoals={setGoals}
-            />
-            <GlobalUpgradeModal />
-          </NavigationContainer>
-        )}
-      </PremiumProvider>
-    </SafeAreaProvider>
+      <SafeAreaProvider>
+        <PremiumProvider>
+          <StatusBar style="light" />
+          {!onboarded ? (
+            <OnboardingNavigator onComplete={completeOnboarding} />
+          ) : (
+            <NavigationContainer theme={{ colors: { background: T.bg }, dark: true }}>
+              <MainTabs
+                userName={userName}
+                tasks={tasks}         setTasks={setTasks}
+                goals={goals}         setGoals={setGoals}
+                streak={streak}
+                totalCompleted={totalCompleted}
+              />
+              <GlobalUpgradeModal />
+            </NavigationContainer>
+          )}
+        </PremiumProvider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

@@ -41,7 +41,7 @@ function StatTeaser({ completionPct }) {
 }
 
 // ── Free tier: simple stat cards ─────────────────────────────
-function FreeStats({ tasks }) {
+function FreeStats({ tasks, streak, totalCompleted }) {
   const done          = tasks.filter(t => t.done).length;
   const completionPct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
   const { showUpgrade } = usePremium();
@@ -61,7 +61,7 @@ function FreeStats({ tasks }) {
           <Text style={s.freeCardLabel}>Today</Text>
         </View>
         <View style={s.freeCard}>
-          <Text style={[s.freeNum, { color: T.teal }]}>0</Text>
+          <Text style={[s.freeNum, { color: T.teal }]}>{streak}</Text>
           <Text style={s.freeCardLabel}>Day streak</Text>
         </View>
         <View style={s.freeCard}>
@@ -69,8 +69,8 @@ function FreeStats({ tasks }) {
           <Text style={s.freeCardLabel}>Total tasks</Text>
         </View>
         <View style={s.freeCard}>
-          <Text style={[s.freeNum, { color: T.gold }]}>{done}</Text>
-          <Text style={s.freeCardLabel}>Completed</Text>
+          <Text style={[s.freeNum, { color: T.gold }]}>{totalCompleted}</Text>
+          <Text style={s.freeCardLabel}>All-time done</Text>
         </View>
       </View>
 
@@ -102,7 +102,7 @@ function FreeStats({ tasks }) {
 }
 
 // ── Premium tier: full dashboard ─────────────────────────────
-function PremiumStats({ tasks }) {
+function PremiumStats({ tasks, streak, totalCompleted }) {
   const done          = tasks.filter(t => t.done).length;
   const completionPct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
   const weekDays      = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -117,10 +117,10 @@ function PremiumStats({ tasks }) {
 
       <View style={s.premiumGrid}>
         {[
-          { v: `${completionPct}%`, l: 'Today',      c: completionPct >= 70 ? T.teal : T.blue },
-          { v: '0',                 l: 'Day streak',  c: T.teal  },
-          { v: '0%',                l: 'This week',   c: T.blue  },
-          { v: '0',                 l: 'All time',    c: T.fg2   },
+          { v: `${completionPct}%`,    l: 'Today',      c: completionPct >= 70 ? T.teal : T.blue },
+          { v: `${streak}`,           l: 'Day streak',  c: T.teal  },
+          { v: '0%',                  l: 'This week',   c: T.blue  },
+          { v: `${totalCompleted}`,   l: 'All time',    c: T.fg2   },
         ].map(({ v, l, c }) => (
           <View key={l} style={s.premiumCard}>
             <Text style={[s.premiumNum, { color: c }]}>{v}</Text>
@@ -182,9 +182,11 @@ function PremiumStats({ tasks }) {
 }
 
 // ── Export: auto-switch on premium status ────────────────────
-export default function StatsScreen({ tasks }) {
+export default function StatsScreen({ tasks, streak = 0, totalCompleted = 0 }) {
   const { isPremium } = usePremium();
-  return isPremium ? <PremiumStats tasks={tasks} /> : <FreeStats tasks={tasks} />;
+  return isPremium
+    ? <PremiumStats tasks={tasks} streak={streak} totalCompleted={totalCompleted} />
+    : <FreeStats    tasks={tasks} streak={streak} totalCompleted={totalCompleted} />;
 }
 
 const s = StyleSheet.create({
